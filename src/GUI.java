@@ -1,6 +1,13 @@
 package phpMy;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.net.URL;
 import java.sql.*;
 import java.awt.BorderLayout;
@@ -13,12 +20,21 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+
+
+
 import java.awt.event.ActionListener;
 import java.awt.event.ActionEvent;
 import java.awt.Font;
+
 import javax.swing.JButton;
 import javax.swing.JSeparator;
 import javax.swing.SwingConstants;
+
+import com.mysql.jdbc.exceptions.MySQLIntegrityConstraintViolationException;
 
 public class GUI extends JFrame {
 	
@@ -34,9 +50,11 @@ public class GUI extends JFrame {
 
 	
 	public static void main(String[] args) {
-		String URL = "http://download.finance.yahoo.com/d/quotes.csv?s=AAPL,IBM,GS,AXP,USB,DE,WFC,WMT,KO,PG&f=snl1d1t1c1ohgv&e=.csv";
+		String csvDir = System.getProperty("user.dir") + "\\stocks.csv";
+		System.out.println(csvDir);
+		String URL = "http://download.finance.yahoo.com/d/quotes.csv?s=AAPL,IBM,GS,AXP,USB,DE,WFC,WMT,KO,PG&f=snd1t1l1c1ohgv&e=.csv";
 		try {
-		    org.apache.commons.io.FileUtils.copyURLToFile(new URL(URL), new File("C:\\Users\\Kevin\\Desktop\\download\\stocks.csv"));
+		    org.apache.commons.io.FileUtils.copyURLToFile(new URL(URL), new File(csvDir));
 		} catch (Exception x) { x.printStackTrace(); }
 		System.out.println("Successfully downloaded Yahoo Finance Stock Data!");
 		EventQueue.invokeLater(new Runnable() {
@@ -53,10 +71,15 @@ public class GUI extends JFrame {
 
 	public GUI() {
 		conn = Connect.Connect();
-		Initialize();
+		try {
+			Initialize();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 
-	public void Initialize(){
+	public void Initialize() throws FileNotFoundException{
 		
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		setBounds(100, 100, 475, 375);
@@ -191,7 +214,7 @@ public class GUI extends JFrame {
 				try {
 					statement = conn.createStatement();
 				    resultSet = statement
-					          .executeQuery("SELECT * FROM topstocks WHERE Symbol = '" + selectedStock + "'");
+					          .executeQuery("SELECT * FROM " + selectedStock + "");
 					      writeNameLabel(resultSet);	 
 				}catch (SQLException e) {
 						e.printStackTrace();
@@ -201,10 +224,11 @@ public class GUI extends JFrame {
 
 			private void writeNameLabel(ResultSet resultSet) throws SQLException {
 				 while (resultSet.next()) {
-					 	String name = resultSet.getObject("Name").toString();
+					 	//String name = resultSet.getObject("Name").toString();
+					 	String name = "xxx";
+					 	String lastTradeDate = resultSet.getObject("Last_Trade_DateTime").toString().split(", ")[0];
+					 	String lastTradeTime = resultSet.getObject("Last_Trade_DateTime").toString().split(", ")[1];
 					 	String lastTradeValue =  resultSet.getObject("Last_Trade_Value").toString();
-					 	String lastTradeDate = resultSet.getObject("Last_Trade_Date").toString();
-					 	String lastTradeTime = resultSet.getObject("Last_Trade_Time").toString();
 					 	String dailyChange = resultSet.getObject("Daily_Change").toString();
 					 	String opening = resultSet.getObject("Opening").toString();
 					 	String dailyHigh = resultSet.getObject("Daily_High").toString();
@@ -230,29 +254,75 @@ public class GUI extends JFrame {
 	
 		try {
 			statement = conn.createStatement();
-			statement.executeUpdate("DROP TABLE IF EXISTS `topstocks`");
+/*			statement.executeUpdate("DROP TABLE IF EXISTS `topstocks`");
 			statement.executeUpdate("CREATE TABLE `topstocks` ("
 			          		+ "`Symbol` varchar(4), `Name` varchar(31), `Last_Trade_Value` decimal(5,2), "
 			          		+ "`Last_Trade_Date` varchar(12), `Last_Trade_Time` varchar(8), `Daily_Change` decimal(4,2), "
 			          		+ "`Opening` decimal(5,2), `Daily_High` decimal(5,2), `Daily_Low` decimal(5,2), `Volume` int(8)"
 			          		+ ")");
+*/
+			statement.executeUpdate("CREATE TABLE IF NOT EXISTS `watchedstocks` (`Symbol` varchar(4) NOT NULL PRIMARY KEY, `Name` varchar(31))");
+/*			resultSet = statement.executeQuery("SELECT COUNT(1) IndexIsThere FROM INFORMATION_SCHEMA.STATISTICS "
+					+ "WHERE table_schema = `stocks` AND table_name = `watchedstocks` AND index_name = `udx_symbol`");*/
 		}catch (SQLException e) {
 				e.printStackTrace();
 			}
 		
 		
-		try {
-			statement = conn.createStatement();
-		    resultSet = statement
-			          .executeQuery("LOAD DATA LOCAL INFILE 'C:/Users/Kevin/Desktop/download/stocks.csv' INTO TABLE `topstocks` FIELDS TERMINATED BY ',' ENCLOSED BY '\"' LINES TERMINATED BY '\n'");
-		}catch (SQLException e) {
-				e.printStackTrace();
+//		try {
+		String csvDir = System.getProperty("user.dir") + "\\stocks.csv";
+		InputStream inputStream = new FileInputStream(csvDir);
+			InputStreamReader is = new InputStreamReader(inputStream);
+			BufferedReader br = new BufferedReader(is); 
+			try{
+				String line = br.readLine(); 
+				while (line != null){
+					String[] stockinfo1 = line.split("\"");
+					String[] stockinfo2 = stockinfo1[8].split(",");
+					String[] date = stockinfo1[5].split("/");
+					String datetime = date[2] + "/" + date[0] + "/" + date[1] + ", " + stockinfo1[7];
+					String query1 = "CREATE TABLE IF NOT EXISTS `" + stockinfo1[1] + "` ("
+			          		+ "`Last_Trade_DateTime` varchar(25) NOT NULL PRIMARY KEY, `Last_Trade_Value` decimal(5,2), "
+			          		+ "`Daily_Change` decimal(4,2), `Opening` decimal(5,2), `Daily_High` decimal(5,2), "
+			          		+ "`Daily_Low` decimal(5,2), `Volume` int(8)" + ")";
+					String query2 = "INSERT INTO `watchedstocks` (Symbol, Name) VALUES ('" + stockinfo1[1]
+							+ "', '" + stockinfo1[3] + "')";
+					String query3 = "INSERT INTO `" + stockinfo1[1] + "` (Last_Trade_DateTime, "
+							+ "Last_Trade_Value, Daily_Change, Opening, Daily_High, Daily_Low, Volume) "
+							+ "VALUES ('" + datetime + "', '" + stockinfo2[1] + "', '" + stockinfo2[2] 
+							+ "', '" + stockinfo2[3] + "', '" + stockinfo2[4] + "', '" + stockinfo2[5]
+							+ "', '" + stockinfo2[6] + "')";
+					try{
+						statement = conn.createStatement();
+						statement.executeUpdate(query1);
+						try{
+							statement.executeUpdate(query2);
+						} catch(MySQLIntegrityConstraintViolationException e){
+							e.printStackTrace();
+						}
+						statement.executeUpdate(query3);
+					} catch (SQLException e) {
+						e.printStackTrace();
+					}
+					line = br.readLine();
+				}
+				br.close();
+				
+			} catch (IOException e) {
+				Logger log = Logger.getLogger(GUI.class.getName()); 
+				log.log(Level.SEVERE, e.toString(), e);
 			}
+//			statement = conn.createStatement();
+//		    resultSet = statement
+//			          .executeQuery("LOAD DATA LOCAL INFILE 'C:/Users/Kevin/Desktop/download/stocks.csv' INTO TABLE `topstocks` FIELDS TERMINATED BY ',' ENCLOSED BY '\"' LINES TERMINATED BY '\n'");
+//		}catch (SQLException e) {
+//				e.printStackTrace();
+//			}
 		
 		try {
 			statement = conn.createStatement();
 		    resultSet = statement
-			          .executeQuery("SELECT * FROM topstocks");
+			          .executeQuery("SELECT * FROM watchedstocks");
 			      populateComboBox(resultSet);
 		}catch (SQLException e) {
 				e.printStackTrace();
